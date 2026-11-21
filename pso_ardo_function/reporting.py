@@ -12,16 +12,15 @@ import pandas as pd
 import scipy
 from scipy.stats import friedmanchisquare, rankdata, wilcoxon
 
-from experiment import write_json
-from config import PROPOSED, normalize_algorithm
+from experiment import ZHQ_write_json
 
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
-CURVE_COLORS = {PROPOSED: "tab:purple", "ARDO": "tab:orange", "GWO": "tab:green",
+ZH_CURVE_COLORS = {"PSO_ARDO": "tab:purple", "ARDO": "tab:orange", "GWO": "tab:green",
                "WOA": "tab:red", "PSO": "tab:blue"}
 
 
-def table(headers, rows):
+def ZHQ_table(headers, rows):
     def cell(value):
         return str(value).replace("|", "\\|").replace("\n", " ")
     return "\n".join(["| " + " | ".join(map(cell, headers)) + " |",
@@ -29,11 +28,11 @@ def table(headers, rows):
                      + ["| " + " | ".join(map(cell, row)) + " |" for row in rows])
 
 
-def number(value):
+def ZHQ_number(value):
     return "NA" if not np.isfinite(value) else f"{value:.6g}"
 
 
-def paired_statistics(subject, opponent):
+def ZHQ_paired_statistics(subject, opponent):
 
     subject, opponent = np.asarray(subject, float), np.asarray(opponent, float)
     if subject.shape != opponent.shape or subject.size == 0:
@@ -58,7 +57,7 @@ def paired_statistics(subject, opponent):
                 losses=int(np.sum(difference > 0)), pairs=len(subject))
 
 
-def holm_adjust(values):
+def ZHQ_holm_adjust(values):
     values = np.asarray(values, dtype=float)
     adjusted = np.full(values.shape, np.nan)
     valid = np.flatnonzero(np.isfinite(values))
@@ -70,23 +69,23 @@ def holm_adjust(values):
     return adjusted
 
 
-def comparisons(frame, algorithms):
+def ZHQ_comparisons(frame, algorithms):
     rows = []
-    if PROPOSED not in algorithms:
+    if "PSO_ARDO" not in algorithms:
         return pd.DataFrame()
     for case, group in frame.groupby("case", sort=False):
-        left = group[group.algorithm == PROPOSED].set_index(["run", "seed"]).sort_index()
+        left = group[group.algorithm == "PSO_ARDO"].set_index(["run", "seed"]).sort_index()
         per_function = []
         for other in algorithms:
-            if other == PROPOSED:
+            if other == "PSO_ARDO":
                 continue
             right = group[group.algorithm == other].set_index(["run", "seed"]).sort_index()
             if (not left.index.is_unique or not left.index.equals(right.index)
                     or not left.initial_hash.equals(right.initial_hash)):
                 raise ValueError(f"{case}: the run seeds or initial populations do not match")
-            stats = paired_statistics(left.fitness.to_numpy(), right.fitness.to_numpy())
-            per_function.append(dict(case=case, subject=PROPOSED, opponent=other, **stats))
-        for row, p in zip(per_function, holm_adjust([row["p_raw"] for row in per_function])):
+            stats = ZHQ_paired_statistics(left.fitness.to_numpy(), right.fitness.to_numpy())
+            per_function.append(dict(case=case, subject="PSO_ARDO", opponent=other, **stats))
+        for row, p in zip(per_function, ZHQ_holm_adjust([row["p_raw"] for row in per_function])):
             if not np.isfinite(p):
                 conclusion = "未推断"
             elif p >= 0.05:
@@ -97,11 +96,11 @@ def comparisons(frame, algorithms):
     return pd.DataFrame(rows)
 
 
-def csv(frame, path):
+def ZHQ_csv(frame, path):
     frame.to_csv(path, index=False, encoding="utf-8-sig", float_format="%.17g")
 
 
-def save_curves(suite, case, function_name, records, algorithms, population, output):
+def ZHQ_save_curves(suite, case, function_name, records, algorithms, population, output):
 
     fig, axis = plt.subplots(figsize=(8, 4.8))
     summary_rows, run_frames = [], []
@@ -117,8 +116,8 @@ def save_curves(suite, case, function_name, records, algorithms, population, out
         for r in pool:
             run_frames.append(pd.DataFrame(dict(algorithm=name, run=r["run"], seed=r["seed"],
                                                 iteration=iterations, evaluations=evaluations, fitness=r["curve"])))
-        axis.plot(evaluations, np.maximum(mean, 1e-30), label=name, color=CURVE_COLORS[name],
-                  linewidth=2.3 if name == PROPOSED else 1.5)
+        axis.plot(evaluations, np.maximum(mean, 1e-30), label=name, color=ZH_CURVE_COLORS[name],
+                  linewidth=2.3 if name == "PSO_ARDO" else 1.5)
     axis.set(xlabel="函数评价次数", ylabel="历史最优函数值均值",
              title=f"{case} · {function_name}", yscale="log")
     axis.grid(alpha=0.25)
@@ -129,33 +128,33 @@ def save_curves(suite, case, function_name, records, algorithms, population, out
     for rows, suffix in ((summary_rows, "mean"), (run_frames, "runs")):
         curve_frame = pd.concat(rows, ignore_index=True)
         curve_frame = curve_frame.assign(suite=suite, case=case, function_name=function_name)
-        csv(curve_frame, output / f"{case}_{suffix}.csv")
+        ZHQ_csv(curve_frame, output / f"{case}_{suffix}.csv")
 
 
-def write_report(records, output, metadata):
+def ZHQ_write_report(records, output, metadata):
     cfg, algorithms = metadata["config"], metadata["algorithms"]
     suite = cfg["suite"]
     functions = {p["code"]: p["name"] for p in metadata["problems"]}
     metadata["versions"] = dict(python=platform.python_version(), numpy=np.__version__, scipy=scipy.__version__,
                                 pandas=pd.__version__, matplotlib=matplotlib.__version__)
-    frame = pd.DataFrame([{k: v for k, v in r.items() if k not in ("diagnostics", "position", "curve")}
+    frame = pd.DataFrame([{k: v for k, v in r.items() if k not in ("position", "curve")}
                           for r in records])
     frame["suite"] = suite
     frame["function_name"] = frame["case"].map(functions)
-    csv(frame, output / "runs.csv")
+    ZHQ_csv(frame, output / "runs.csv")
     summary = frame.groupby(["suite", "case", "function_name", "algorithm"], sort=False).agg(
         mean=("fitness", "mean"), std=("fitness", "std"), best=("fitness", "min"),
         median=("fitness", "median"), worst=("fitness", "max"), seconds=("seconds", "mean"),
         evaluations=("evaluations", "mean")
     ).reset_index()
     summary["rank"] = summary.groupby("case")["mean"].rank(method="average")
-    csv(summary, output / "summary.csv")
+    ZHQ_csv(summary, output / "summary.csv")
     ranking = (summary.groupby("algorithm", sort=False)["rank"].mean().sort_values(kind="stable")
                .rename("average_rank").reset_index())
-    csv(ranking.assign(suite=suite), output / "benchmark_ranking.csv")
-    tests = comparisons(frame, algorithms)
+    ZHQ_csv(ranking.assign(suite=suite), output / "benchmark_ranking.csv")
+    tests = ZHQ_comparisons(frame, algorithms)
     if not tests.empty:
-        csv(tests.assign(suite=suite, function_name=tests["case"].map(functions)), output / "paired_tests.csv")
+        ZHQ_csv(tests.assign(suite=suite, function_name=tests["case"].map(functions)), output / "paired_tests.csv")
 
     budget = cfg["population"] * (1 + cfg["iterations"])
     lines = [f"# {len(functions)} 个基准函数的优化器对比（{suite}）", "",
@@ -165,55 +164,52 @@ def write_report(records, output, metadata):
              "同一函数、同一次重复共用初始种群。收敛图按累计函数评价次数对齐，纵轴为历史最优函数值的运行均值，越小越好。"
              "对数图的显示下限为 1e-30，CSV 和统计检验保留原始数值。", ""]
     lines += ["## 跨函数排名", "", "在每个函数内按最终均值排名，再对各函数等权平均，名次越小越好。", "",
-              table(["方法", "平均名次"], [[r.algorithm, number(r.average_rank)] for r in ranking.itertuples()]), ""]
+              ZHQ_table(["方法", "平均名次"], [[r.algorithm, ZHQ_number(r.average_rank)] for r in ranking.itertuples()]), ""]
     if len(algorithms) >= 3 and len(functions) >= 3:
         means = summary.pivot(index="case", columns="algorithm", values="mean")[algorithms].to_numpy()
         if np.all(np.ptp(means, axis=1) == 0):
             statistic, p = 0.0, 1.0
         else:
             statistic, p = friedmanchisquare(*means.T)
-        write_json(output / "friedman.json", dict(statistic=statistic, p_value=p, blocks=list(functions)))
-        lines += [f"以函数为区组的 Friedman 总体检验 p = {number(p)}。", ""]
+        ZHQ_write_json(output / "friedman.json", dict(statistic=statistic, p_value=p, blocks=list(functions)))
+        lines += [f"以函数为区组的 Friedman 总体检验 p = {ZHQ_number(p)}。", ""]
     if not tests.empty:
         counts = pd.crosstab(tests.opponent, tests.conclusion).reindex(
-            index=[a for a in algorithms if a != PROPOSED],
+            index=[a for a in algorithms if a != "PSO_ARDO"],
             columns=["显著优", "不显著", "显著劣", "未推断"], fill_value=0)
-        lines += [table([f"{PROPOSED} 相对对手", *counts.columns], [[name, *row] for name, row in counts.iterrows()]),
+        lines += [ZHQ_table(["PSO_ARDO 相对对手", *counts.columns], [[name, *row] for name, row in counts.iterrows()]),
                   "", "双侧 Wilcoxon 符号秩检验按同种子配对，每个函数内对各对手用 Holm 校正（α = 0.05）。", ""]
     curves_dir = output / "curves"
     curves_dir.mkdir(exist_ok=True)
     for case, function_name in functions.items():
         selected = [r for r in records if r["case"] == case]
-        save_curves(suite, case, function_name, selected, algorithms, cfg["population"], curves_dir)
+        ZHQ_save_curves(suite, case, function_name, selected, algorithms, cfg["population"], curves_dir)
         rows = summary[summary.case == case].sort_values("mean", kind="stable")
         lines += [f"## {case} · {function_name}", "",
-                  table(["方法", "最终均值", "标准差", "最好", "中位数", "最差"],
-                        [[r.algorithm, *[number(v) for v in (r.mean, r.std, r.best, r.median, r.worst)]]
+                  ZHQ_table(["方法", "最终均值", "标准差", "最好", "中位数", "最差"],
+                        [[r.algorithm, *[ZHQ_number(v) for v in (r.mean, r.std, r.best, r.median, r.worst)]]
                          for r in rows.itertuples()]), "", f"![{case}](curves/{case}.png)", ""]
     (output / "report.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def regenerate_report(source, parent=None):
+def ZHQ_regenerate_report(source, parent=None):
 
     metadata = json.loads((source / "metadata.json").read_text(encoding="utf-8"))
     if metadata.get("kind") != "benchmark" or metadata.get("status") != "complete":
         raise ValueError("请选择已完成的基准函数实验目录")
     cfg = metadata["config"]
-    algorithms = [normalize_algorithm(name) for name in metadata["algorithms"]]
+    algorithms = metadata["algorithms"]
     records = []
     for path in sorted((source / "partial").glob("task_*.json")):
-        for record in json.loads(path.read_text(encoding="utf-8")):
-            record["algorithm"] = normalize_algorithm(record["algorithm"])
-            records.append(record)
+        records.extend(json.loads(path.read_text(encoding="utf-8")))
     expected = {(case, run, name) for case in cfg["functions"]
                 for run in range(cfg["runs"]) for name in algorithms}
     actual = {(r["case"], r["run"], r["algorithm"]) for r in records}
     if expected != actual or len(records) != len(expected):
         raise ValueError("逐次运行记录缺失或重复，请检查原结果的 partial 目录")
-    metadata["algorithms"] = algorithms
     output = (parent or source.parent) / f"results_function_report_{datetime.now():%Y%m%d_%H%M%S_%f}"
     output.mkdir(parents=True, exist_ok=False)
-    write_report(records, output, metadata)
+    ZHQ_write_report(records, output, metadata)
     print(f"报告：{(output / 'report.md').resolve()}")
 
 

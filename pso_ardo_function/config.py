@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class AlgorithmParameters:
+class ZHQ_AlgorithmParameters:
 
     omega_max: float = 0.9
     omega_min: float = 0.4
@@ -12,7 +12,6 @@ class AlgorithmParameters:
     velocity_fraction: float = 0.2
     pioneer_fraction: float = 0.3
     coordinator_fraction: float = 0.4
-    role_floor: float = 0.1
     levy_beta: float = 1.5
     levy_scale: float = 0.02
     similarity_sigma: float = 0.01
@@ -27,21 +26,4 @@ class AlgorithmParameters:
     woa_b: float = 1.0
 
 
-PARAMS = AlgorithmParameters()
-ALGORITHMS = ("PSO_ARDO", "ARDO", "PSO", "GWO", "WOA")
-PROPOSED = "PSO_ARDO"
-
-
-def normalize_algorithm(value):
-    key = str(value).strip().lower().replace("-", "_")
-    aliases = {
-        "pso_ardo": PROPOSED,
-        "psoardo": PROPOSED,
-        "ardo": "ARDO",
-        "pso": "PSO",
-        "gwo": "GWO",
-        "woa": "WOA",
-    }
-    if key not in aliases:
-        raise ValueError(f"unknown algorithm: {value}")
-    return aliases[key]
+ZH_PARAMS = ZHQ_AlgorithmParameters()
