@@ -37,7 +37,7 @@ def ZHQ_tick_label(value, _):
             else rf"${factor:g}\!\times\!10^{{{power}}}$")
 
 
-def ZHQ_draw_panel(ax, source, code, letter, floor=ZH_DISPLAY_FLOOR, max_iteration=None):
+def ZHQ_draw_panel(ax, source, code, letter, floor=ZH_DISPLAY_FLOOR):
     data = pd.read_csv(source / "curves" / f"{code}_mean.csv")
     values = data.pivot(index="iteration", columns="algorithm", values="mean_best_fitness")
     unknown = values.columns.difference(ZH_STYLES)
@@ -45,8 +45,6 @@ def ZHQ_draw_panel(ax, source, code, letter, floor=ZH_DISPLAY_FLOOR, max_iterati
         raise ValueError(f"曲线数据含未知算法名称：{unknown.tolist()}")
     styles = [name for name in ZH_STYLES if name in values]
     values = values[styles].sort_index()
-    if max_iteration is not None:
-        values = values.loc[:max_iteration]
     iterations = values.index.to_numpy()
     fitness = values.to_numpy()
     if (not styles or not len(iterations)
@@ -89,27 +87,29 @@ def ZHQ_draw_panel(ax, source, code, letter, floor=ZH_DISPLAY_FLOOR, max_iterati
     return bool(np.any(fitness < floor))
 
 
-def ZHQ_save_figure(source, group, output, floor=ZH_DISPLAY_FLOOR, max_iteration=None):
-    fig, axes = plt.subplots(3, 2, figsize=(7.2, 9.6))
+def ZHQ_save_figure(source, group, output, floor=ZH_DISPLAY_FLOOR):
+    rows = int(np.ceil(len(group) / 2))
+    height = 3.2 * rows
+    fig, axes = plt.subplots(rows, 2, figsize=(7.2, height), squeeze=False)
     try:
-        fig.subplots_adjust(left=0.12, right=0.975, top=0.918, bottom=0.089,
+        fig.subplots_adjust(left=0.12, right=0.975, top=1.0 - 0.79 / height, bottom=0.85 / height,
                             wspace=0.40, hspace=0.59)
         floor_used = False
         legend = {}
         for ax, code, letter in zip(axes.flat, group, "abcdef"):
-            floor_used |= ZHQ_draw_panel(ax, source, code, letter, floor, max_iteration)
+            floor_used |= ZHQ_draw_panel(ax, source, code, letter, floor)
             handles, labels = ax.get_legend_handles_labels()
             legend.update(zip(labels, handles))
         for ax in list(axes.flat)[len(group):]:
             ax.set_visible(False)
         fig.legend(legend.values(), legend.keys(), loc="upper center",
-                   bbox_to_anchor=(0.52, 0.993), ncol=3, frameon=False,
+                   bbox_to_anchor=(0.52, 1.0 - 0.07 / height), ncol=3, frameon=False,
                    fontsize=8.5, handlelength=2, labelspacing=0.4, columnspacing=1.5)
         if floor_used:
             # 含 $...$ 的字符串会整体交给 mathtext 渲染，中文会变成方框，这里改用上标字符
             power = str(int(round(np.log10(floor)))).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
-            fig.subplots_adjust(bottom=0.105)
-            fig.text(0.5, 0.006, f"误差低于 10{power} 视为已达到最优值，图中显示在 10{power}",
+            fig.subplots_adjust(bottom=1.0 / height)
+            fig.text(0.5, 0.06 / height,f"误差低于 10{power} 视为已达到最优值，图中显示在 10{power}",
                      ha="center", va="bottom")
         fig.savefig(output, dpi=400, facecolor="white")
         print(f"收敛曲线图已保存到：{output}")
@@ -125,13 +125,9 @@ def ZHQ_main():
     parser.add_argument("--output", type=Path, default=ZH_ROOT, help="图片的父目录")
     parser.add_argument("--floor", type=float, default=ZH_DISPLAY_FLOOR,
                         help="对数图显示下限；CEC 约定误差低于 1e-8 视为达到最优，可设为 1e-8")
-    parser.add_argument("--max-iteration", type=int, default=None,
-                        help="横轴显示的最大迭代次数")
     args = parser.parse_args()
     if not 0 < args.floor < 1:
         parser.error("--floor 必须在 (0, 1) 之间")
-    if args.max_iteration is not None and args.max_iteration < 1:
-        parser.error("--max-iteration 必须大于等于 1")
     curves = args.results / "curves"
     available = [code for code in ZH_DEFINITIONS if (curves / f"{code}_mean.csv").is_file()]
     if not available:
@@ -154,8 +150,7 @@ def ZHQ_main():
     for start in range(0, len(codes), 6):
         group = codes[start:start + 6]
         name = "-".join(code.upper() for code in (group[0], group[-1])) if len(group) > 1 else group[0].upper()
-        ZHQ_save_figure(args.results, group, output_dir / f"{name}_平均收敛曲线.png",
-                    args.floor, args.max_iteration)
+        ZHQ_save_figure(args.results, group, output_dir / f"{name}_平均收敛曲线.png", args.floor)
 
 
 if __name__ == "__main__":

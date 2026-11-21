@@ -18,12 +18,12 @@ def ZHQ_task(settings, code, run_index):
 
 
 def ZHQ_main():
-    parser = argparse.ArgumentParser(description="F1–F6 基准函数优化实验")
+    parser = argparse.ArgumentParser(description="F1–F4 基准函数优化实验")
     parser.add_argument("--functions", nargs="+", type=str.lower, choices=tuple(ZH_DEFINITIONS),
                         default=list(ZH_DEFINITIONS))
     parser.add_argument("--population", type=int, default=30)
     parser.add_argument("--dimension", type=int, default=30)
-    parser.add_argument("--iterations", type=int, default=1000)
+    parser.add_argument("--iterations", type=int, default=300)
     parser.add_argument("--runs", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20261111)
     parser.add_argument("--shift-seed", type=int, default=731029)

@@ -4,22 +4,21 @@ from typing import Callable, Optional
 import numpy as np
 
 
-def ZHQ_chung_reynolds(z):
-    return np.dot(z, z)**2
+def ZHQ_schwefel_220(z):
+    return np.sum(np.abs(z))
 
 
-def ZHQ_csendes(z):
-    with np.errstate(divide="ignore", invalid="ignore"):
-        wave = np.where(z == 0.0, 0.0, np.sin(1.0 / np.where(z == 0.0, 1.0, z)))
-    return np.sum(z**6 * (2.0 + wave))
+def ZHQ_trigonometric_1(z):
+    # D − Σcos z = Σ2sin²(z/2)，1 − cos z − sin z = 2sin²(z/2) − sin z
+    half = 2.0 * np.sin(0.5 * z)**2
+    terms = np.sum(half) + np.arange(1, z.size + 1) * (half - np.sin(z))
+    return np.dot(terms, terms)
 
 
-def ZHQ_quartic(z):
-    return np.dot(np.arange(1, z.size + 1), z**4)
-
-
-def ZHQ_schwefel_223(z):
-    return np.sum(z**10)
+def ZHQ_bohachevsky_3(z):
+    # 0.3(1 − cos θ) = 0.6sin²(θ/2)，θ = 3πz_i + 4πz_{i+1}
+    theta = 3.0 * np.pi * z[:-1] + 4.0 * np.pi * z[1:]
+    return np.sum(z[:-1]**2 + 2.0 * z[1:]**2 + 0.6 * np.sin(0.5 * theta)**2)
 
 
 def ZHQ_griewank(z):
@@ -37,14 +36,12 @@ class ZHQ_FunctionSpec:
     coordinates: str = "shifted"
 
 
-ZH_SUITE = "selected6"
+ZH_SUITE = "selected4"
 ZH_DEFINITIONS = {
-    "f1": ZHQ_FunctionSpec(110, "Chung–Reynolds", -0.5, 0.5, ZHQ_chung_reynolds),
-    "f2": ZHQ_FunctionSpec(229, "Csendes", -1., 1., ZHQ_csendes),
-    "f3": ZHQ_FunctionSpec(250, "Rotated Quartic", -1.28, 1.28, ZHQ_quartic, coordinates="rotated"),
-    "f4": ZHQ_FunctionSpec(251, "Rotated Csendes", -1., 1., ZHQ_csendes, coordinates="rotated"),
-    "f5": ZHQ_FunctionSpec(254, "Rotated Schwefel 2.23", -10., 10., ZHQ_schwefel_223, coordinates="rotated"),
-    "f6": ZHQ_FunctionSpec(7, "Griewank", -600., 600., ZHQ_griewank),
+    "f1": ZHQ_FunctionSpec(307, "Rotated Schwefel 2.20", -1., 1., ZHQ_schwefel_220, coordinates="rotated"),
+    "f2": ZHQ_FunctionSpec(313, "Trigonometric 1", -1., 1., ZHQ_trigonometric_1),
+    "f3": ZHQ_FunctionSpec(317, "Bohachevsky 3", -15., 15., ZHQ_bohachevsky_3),
+    "f4": ZHQ_FunctionSpec(319, "Rotated Griewank", -600., 600., ZHQ_griewank, coordinates="rotated"),
 }
 
 

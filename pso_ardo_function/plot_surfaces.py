@@ -18,7 +18,7 @@ from function import ZH_DEFINITIONS, ZHQ_make_benchmark
 ZH_ROOT = Path(__file__).resolve().parent
 ZH_SHIFT_SEED = 731029
 
-ZH_LOCAL_HALF_WIDTH = {"f6": 15.0}
+ZH_LOCAL_HALF_WIDTH = {"f3": 1.0, "f4": 15.0}
 
 
 def ZHQ_coordinate_axis(problem, index, samples):
@@ -78,12 +78,14 @@ def ZHQ_draw_panel(ax, problem, letter):
 
 
 def ZHQ_save_figure(problems, output):
-    fig = plt.figure(figsize=(8.3, 11.5), facecolor="white")
-    fig.subplots_adjust(left=0.065, right=0.98, bottom=0.05, top=0.985,
+    rows = int(np.ceil(len(problems) / 2))
+    height = 11.5 / 3 * rows
+    fig = plt.figure(figsize=(8.3, height), facecolor="white")
+    fig.subplots_adjust(left=0.065, right=0.98, bottom=0.575 / height, top=1.0 - 0.1725 / height,
                         wspace=0.32, hspace=0.24)
     try:
         for index, (problem, letter) in enumerate(zip(problems, "abcdef"), start=1):
-            ZHQ_draw_panel(fig.add_subplot(3, 2, index, projection="3d"), problem, letter)
+            ZHQ_draw_panel(fig.add_subplot(rows, 2, index, projection="3d"), problem, letter)
         fig.savefig(output, dpi=300, facecolor="white", bbox_inches="tight", pad_inches=0.15)
         print(f"函数图已保存到：{output}")
     finally:
