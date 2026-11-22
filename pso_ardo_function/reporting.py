@@ -100,7 +100,7 @@ def ZHQ_csv(frame, path):
     frame.to_csv(path, index=False, encoding="utf-8-sig", float_format="%.17g")
 
 
-def ZHQ_save_curves(suite, case, function_name, records, algorithms, population, output):
+def ZHQ_save_curves(case, function_name, records, algorithms, population, output):
 
     fig, axis = plt.subplots(figsize=(8, 4.8))
     summary_rows, run_frames = [], []
@@ -127,22 +127,20 @@ def ZHQ_save_curves(suite, case, function_name, records, algorithms, population,
     plt.close(fig)
     for rows, suffix in ((summary_rows, "mean"), (run_frames, "runs")):
         curve_frame = pd.concat(rows, ignore_index=True)
-        curve_frame = curve_frame.assign(suite=suite, case=case, function_name=function_name)
+        curve_frame = curve_frame.assign(case=case, function_name=function_name)
         ZHQ_csv(curve_frame, output / f"{case}_{suffix}.csv")
 
 
 def ZHQ_write_report(records, output, metadata):
     cfg, algorithms = metadata["config"], metadata["algorithms"]
-    suite = cfg["suite"]
     functions = {p["code"]: p["name"] for p in metadata["problems"]}
     metadata["versions"] = dict(python=platform.python_version(), numpy=np.__version__, scipy=scipy.__version__,
                                 pandas=pd.__version__, matplotlib=matplotlib.__version__)
     frame = pd.DataFrame([{k: v for k, v in r.items() if k not in ("position", "curve")}
                           for r in records])
-    frame["suite"] = suite
     frame["function_name"] = frame["case"].map(functions)
     ZHQ_csv(frame, output / "runs.csv")
-    summary = frame.groupby(["suite", "case", "function_name", "algorithm"], sort=False).agg(
+    summary = frame.groupby(["case", "function_name", "algorithm"], sort=False).agg(
         mean=("fitness", "mean"), std=("fitness", "std"), best=("fitness", "min"),
         median=("fitness", "median"), worst=("fitness", "max"), seconds=("seconds", "mean"),
         evaluations=("evaluations", "mean")
@@ -151,13 +149,10 @@ def ZHQ_write_report(records, output, metadata):
     ZHQ_csv(summary, output / "summary.csv")
     ranking = (summary.groupby("algorithm", sort=False)["rank"].mean().sort_values(kind="stable")
                .rename("average_rank").reset_index())
-    ZHQ_csv(ranking.assign(suite=suite), output / "benchmark_ranking.csv")
     tests = ZHQ_comparisons(frame, algorithms)
-    if not tests.empty:
-        ZHQ_csv(tests.assign(suite=suite, function_name=tests["case"].map(functions)), output / "paired_tests.csv")
 
     budget = cfg["population"] * (1 + cfg["iterations"])
-    lines = [f"# {len(functions)} 个基准函数的优化器对比（{suite}）", "",
+    lines = [f"# {len(functions)} 个基准函数的优化器对比", "",
              f"本次函数 {', '.join(functions)}，方法 {', '.join(algorithms)}。",
              f"维度 {cfg['dimension']}，种群 {cfg['population']}，迭代 {cfg['iterations']} 代，"
              f"每个函数重复 {cfg['runs']} 次。每个方法每次评价 {budget} 次，含初始种群。",
@@ -183,7 +178,7 @@ def ZHQ_write_report(records, output, metadata):
     curves_dir.mkdir(exist_ok=True)
     for case, function_name in functions.items():
         selected = [r for r in records if r["case"] == case]
-        ZHQ_save_curves(suite, case, function_name, selected, algorithms, cfg["population"], curves_dir)
+        ZHQ_save_curves(case, function_name, selected, algorithms, cfg["population"], curves_dir)
         rows = summary[summary.case == case].sort_values("mean", kind="stable")
         lines += [f"## {case} · {function_name}", "",
                   ZHQ_table(["方法", "最终均值", "标准差", "最好", "中位数", "最差"],

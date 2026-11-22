@@ -5,7 +5,7 @@ import argparse
 from dataclasses import asdict
 from pathlib import Path
 
-from function import ZH_DEFINITIONS, ZH_SUITE, ZHQ_make_benchmark
+from function import ZH_DEFINITIONS, ZHQ_make_benchmark
 from experiment import ZH_OPTIMIZERS, ZHQ_execute, ZHQ_output_directory, ZHQ_run_optimizers
 from pso_ardo import ZH_PARAMETER_RECORD
 
@@ -44,14 +44,14 @@ def ZHQ_main():
     if min(args.seed, args.shift_seed) < 0:
         parser.error("seed 和 shift-seed 必须非负")
     settings = dict(population=args.population, dimension=args.dimension, iterations=args.iterations,
-                    runs=args.runs, suite=ZH_SUITE, algorithms=list(ZH_OPTIMIZERS), seed=args.seed,
+                    runs=args.runs, algorithms=list(ZH_OPTIMIZERS), seed=args.seed,
                     shift_seed=args.shift_seed, shifted=not args.no_shift, functions=args.functions)
     problems = [ZHQ_make_benchmark(code, args.dimension, args.shift_seed, not args.no_shift)
                 for code in args.functions]
     metadata = dict(kind="benchmark", config=settings, algorithms=settings["algorithms"],
                     proposed_parameters=ZH_PARAMETER_RECORD,
                     problems=[{k: v for k, v in asdict(p).items() if k != "formula"} for p in problems])
-    output = ZHQ_output_directory(Path(__file__).resolve().parent, f"results_function_{ZH_SUITE}", args.output)
+    output = ZHQ_output_directory(Path(__file__).resolve().parent, "results_function", args.output)
     tasks = [(settings, code, r) for code in args.functions for r in range(args.runs)]
     ZHQ_execute(ZHQ_task, tasks, args.jobs, output, metadata)
 

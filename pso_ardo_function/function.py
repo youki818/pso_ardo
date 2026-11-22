@@ -36,7 +36,6 @@ class ZHQ_FunctionSpec:
     coordinates: str = "shifted"
 
 
-ZH_SUITE = "selected4"
 ZH_DEFINITIONS = {
     "f1": ZHQ_FunctionSpec(307, "Rotated Schwefel 2.20", -1., 1., ZHQ_schwefel_220, coordinates="rotated"),
     "f2": ZHQ_FunctionSpec(313, "Trigonometric 1", -1., 1., ZHQ_trigonometric_1),
