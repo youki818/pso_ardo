@@ -636,8 +636,16 @@ def ZHQ_write_report(records, output, metadata):
               "- 逐次结果见 runs.csv，汇总见 summary.csv，检验见 paired_tests.csv，各迭代处均值见 checkpoint_means.csv；"
               "逐代曲线数据见 curves/，全部测试集预测值见 predictions/test_predictions.csv。"]
     if warned:
-        lines.append(f"- 共有 {warned} 次 SVR 训练达到迭代上限 max_iter = {cfg['max_iter']} 后停止（多出现在 C 很大的区域），"
-                     "可用 --max-iter 调大或设为 -1 取消上限。")
+        lines.append(f"- 寻优过程中共有 {warned} 次 SVR 训练达到迭代上限 max_iter = {cfg['max_iter']} 后停止"
+                     "（多出现在 C 很大、g 很小的区域），这些候选参数的适应度是近似值；可用 --max-iter 调大或设为 -1 取消上限。")
+    if "final_converged" in frame.columns:
+        unconverged = frame[~frame.final_converged.astype(bool)]
+        if len(unconverged):
+            counts = "，".join(f"{ZH_STYLES[name][0]} {count} 个" for name, count in unconverged.algorithm.value_counts().items())
+            lines.append(f"- 有 {len(unconverged)} 个最终模型在迭代上限内没有收敛（{counts}），它们的测试指标来自近似解，"
+                         "解读时需注意；runs.csv 的 final_converged、final_n_iter 列给出了每个最终模型的情况。")
+        else:
+            lines.append("- 所有最终模型都在迭代上限内收敛（见 runs.csv 的 final_converged、final_n_iter 列）。")
     (output / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

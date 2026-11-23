@@ -77,7 +77,9 @@ class ZHQ_SVRConfig:
     optimize_epsilon: bool = True
     epsilon: float = 0.01               # 固定 ε 时的取值，也用于网格搜索与默认参数 SVR；以 [-1, 1] 归一化目标为单位
     ln_epsilon: tuple[float, float] = (-9.0, 0.0)
-    max_iter: int = 1_000_000           # libsvm 迭代上限，防止极端参数下单次训练过久；-1 表示不设上限
+    # libsvm 迭代上限；-1 表示不设上限。C 接近 e^10、g 很小时 SMO 难以收敛，100 万次迭代单次训练约 0.7 s，
+    # 粒子停在该边界附近时一个任务会拖到数小时；10 万次约 0.13 s。正常区域的训练只需几千到几万次迭代，不受影响
+    max_iter: int = 100_000
     baselines: bool = True
     grid_step: float = 0.5              # 网格搜索 SVR 在 ln C、ln g 上的步长
     algorithms: tuple[str, ...] = ZH_SVR_ALGORITHMS
@@ -332,7 +334,9 @@ class ZHQ_SVRProblem:
         train_prediction = p.inverse_target(model.predict(train_features))
         test_prediction = p.inverse_target(model.predict(p.features(self.test_x)[:, mask]))
         relative = self.dataset.relative_metrics
-        return dict(n_support=int(len(model.support_)),
+        n_iter = int(np.ravel(model.n_iter_)[0])
+        return dict(n_support=int(len(model.support_)), n_iter=n_iter,
+                    converged=bool(self.config.max_iter < 0 or n_iter < self.config.max_iter),
                     train=ZHQ_regression_metrics(self.train_y, train_prediction, relative),
                     test=ZHQ_regression_metrics(self.test_y, test_prediction, relative),
                     test_prediction=test_prediction)
