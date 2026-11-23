@@ -31,7 +31,8 @@ def ZHQ_parser():
     defaults = ZHQ_SVRConfig()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=tuple(ZH_DATASET_FILES),
-                        help="auto_mpg（默认，398 个样本、7 个特征）或 superconductivity（81 个特征）")
+                        help="auto_mpg（默认，398 个样本、7 个特征）、superconductivity（81 个特征）"
+                             "或 residential_building（372 个样本、103 个特征）")
     parser.add_argument("--quick", action="store_true",
                         help="冒烟测试：种群 6、迭代 5、重复 2 次、3 折、网格步长 2、Superconductivity 抽 300 条"
                              "（其余参数仍可单独指定）")
@@ -53,7 +54,7 @@ def ZHQ_parser():
                         help=f"仅 Superconductivity：随机抽取的样本数，默认 {defaults.n_samples}")
     parser.add_argument("--sample-seed", type=int, help=f"仅 Superconductivity：抽样种子，默认 {defaults.sample_seed}")
     parser.add_argument("--split", choices=("matlab", "random"),
-                        help="Auto MPG 默认 matlab（沿用 nnn.xlsx 的划分，前 319 个训练）；Superconductivity 只能 random")
+                        help="Auto MPG 默认 matlab（沿用 nnn.xlsx 的划分，前 319 个训练）；其他数据集只能 random")
     parser.add_argument("--split-seed", type=int, help=f"随机 80/20 划分的种子，默认 {defaults.split_seed}")
     parser.add_argument("--cv-seed", type=int, help=f"交叉验证分折的种子，默认 {defaults.cv_seed}")
     parser.add_argument("--grid-step", type=float, help=f"网格搜索 SVR 的步长（ln 尺度），默认 {defaults.grid_step}")

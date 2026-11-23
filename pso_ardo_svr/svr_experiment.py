@@ -5,7 +5,7 @@
 工作进程若发生原生崩溃（BrokenProcessPool），未完成的任务会在新的进程池中重跑：任务都带固定种子，
 重跑结果与没有崩溃时相同。崩溃时的 Python 调用栈由 faulthandler 写入 crash_logs/。
 """
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from concurrent.futures.process import BrokenProcessPool
 from datetime import datetime
 import faulthandler
@@ -34,6 +34,7 @@ ZH_OPTIMIZERS = {
 ZH_COMPUTE_FILES = ("ardo.py", "common_tools.py", "config.py", "pso.py", "pso_ardo.py",
                     "svr_problem.py", "svr_experiment.py")
 ZH_WORKER_STATE = {}
+ZH_HEARTBEAT_SECONDS = 120          # 这么久没有任务完成时，打印仍在运行的任务，避免误以为程序卡死
 
 
 def ZHQ_json_ready(value):
@@ -72,7 +73,8 @@ def ZHQ_record(problem, algorithm, run, seed, parameters, fitness, seconds, eval
                   ln_C=float(np.log(parameters["C"])), ln_gamma=float(np.log(parameters["gamma"])),
                   ln_epsilon=float(np.log(parameters["epsilon"])),
                   C=parameters["C"], gamma=parameters["gamma"], epsilon=parameters["epsilon"],
-                  n_selected=int(mask.sum()), n_support=evaluation["n_support"], **stats)
+                  n_selected=int(mask.sum()), n_support=evaluation["n_support"],
+                  final_n_iter=evaluation["n_iter"], final_converged=evaluation["converged"], **stats)
     for split in ("train", "test"):
         record.update({f"{split}_{name}": value for name, value in evaluation[split].items()})
     record.update(mask=mask.astype(int), position=None if position is None else np.asarray(position, dtype=float),
@@ -175,19 +177,31 @@ def ZHQ_clean_crash_logs(log_dir):
         pass
 
 
-def ZHQ_run_pool(pending, jobs, log_dir, store):
-    """用一个新进程池跑完 pending；返回是否有工作进程崩溃。任务内的 Python 异常直接抛出（确定性错误，重跑无用）。"""
+def ZHQ_run_pool(pending, jobs, log_dir, store, labels):
+    """用一个新进程池跑完 pending；返回是否有工作进程崩溃。任务内的 Python 异常直接抛出（确定性错误，重跑无用）。
+    超过 ZH_HEARTBEAT_SECONDS 没有任务完成时，打印仍在运行的任务。"""
     broken = False
     with ProcessPoolExecutor(max_workers=min(jobs, len(pending)), initializer=ZHQ_worker_init,
                              initargs=(str(log_dir),)) as pool:
         futures = {pool.submit(worker, *arguments): key for key, _, worker, arguments in pending}
-        for future in as_completed(futures):
-            try:
-                records = future.result()
-            except BrokenProcessPool:
-                broken = True
+        remaining, quiet_since = set(futures), perf_counter()
+        while remaining:
+            finished, remaining = wait(remaining, timeout=ZH_HEARTBEAT_SECONDS, return_when=FIRST_COMPLETED)
+            if not finished:
+                running = [labels[futures[f]] for f in remaining if f.running()]
+                shown = "、".join(running[:6]) + ("等" if len(running) > 6 else "")
+                print(f"……已 {(perf_counter() - quiet_since) / 60:.0f} 分钟没有新任务完成；未完成 {len(remaining)} 个，"
+                      f"正在运行：{shown or '无'}。个别任务的参数落在 SVR 难收敛的区域时会明显更慢，并非卡死。",
+                      flush=True)
                 continue
-            store(futures[future], records)
+            quiet_since = perf_counter()
+            for future in finished:
+                try:
+                    records = future.result()
+                except BrokenProcessPool:
+                    broken = True
+                    continue
+                store(futures[future], records)
     return broken
 
 
@@ -222,7 +236,7 @@ def ZHQ_execute(tasks, jobs, output, metadata, retries=3):
                 for key, _, worker, arguments in pending:
                     store(key, worker(*arguments))
                 continue
-            if not ZHQ_run_pool(pending, jobs, log_dir, store):
+            if not ZHQ_run_pool(pending, jobs, log_dir, store, labels):
                 continue
             crashes += 1
             remaining = len(tasks) - len(done)

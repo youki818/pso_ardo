@@ -30,15 +30,22 @@ ZH_DATA = ZH_ROOT / "data"
 ZH_AUTO_MPG_FILE = ZH_DATA / "auto-mpg.data"
 ZH_MATLAB_ORDER_FILE = ZH_DATA / "matlab_split_order.csv"
 ZH_SUPERCONDUCTIVITY_FILE = ZH_DATA / "superconductivity.zip"
-ZH_DATASET_FILES = {"auto_mpg": ZH_AUTO_MPG_FILE, "superconductivity": ZH_SUPERCONDUCTIVITY_FILE}
+# 由 prepare_residential_building.py 从 UCI 原始压缩包 data/residential_building.zip 原样转换而来
+ZH_RESIDENTIAL_FILE = ZH_DATA / "residential_building.csv"
+ZH_RESIDENTIAL_DATES = ("START_YEAR", "START_QUARTER", "COMPLETION_YEAR", "COMPLETION_QUARTER")
+ZH_RESIDENTIAL_OUTPUTS = ("V-9", "V-10")
+ZH_DATASET_FILES = {"auto_mpg": ZH_AUTO_MPG_FILE, "superconductivity": ZH_SUPERCONDUCTIVITY_FILE,
+                    "residential_building": ZH_RESIDENTIAL_FILE}
 ZH_DATASET_TITLES = {"auto_mpg": "UCI Auto MPG（UCI 编号 9）",
-                     "superconductivity": "UCI Superconductivity（UCI 编号 464）"}
+                     "superconductivity": "UCI Superconductivity（UCI 编号 464）",
+                     "residential_building": "UCI Residential Building（UCI 编号 437）"}
 ZH_AUTO_MPG_COLUMNS = ("mpg", "cylinders", "displacement", "horsepower", "weight",
                        "acceleration", "model_year", "origin")
 ZH_COLUMN_TITLES = {
     "mpg": "油耗（英里/加仑）", "cylinders": "气缸数", "displacement": "排量（立方英寸）",
     "horsepower": "马力", "weight": "整备质量（磅）", "acceleration": "0–60 mph 加速时间（秒）",
     "model_year": "车型年份", "origin": "产地", "critical_temp": "临界温度（K）",
+    "V-9": "实际售价（10000 IRRm）",
 }
 # mpg 是 UCI 定义的预测目标；displacement 用于复现同目录 MATLAB 程序（它把 H 列排量当输出、mpg 当输入）
 ZH_AUTO_MPG_TARGETS = ("mpg", "displacement")
@@ -77,7 +84,9 @@ class ZHQ_SVRConfig:
     optimize_epsilon: bool = True
     epsilon: float = 0.01               # 固定 ε 时的取值，也用于网格搜索与默认参数 SVR；以 [-1, 1] 归一化目标为单位
     ln_epsilon: tuple[float, float] = (-9.0, 0.0)
-    max_iter: int = 1_000_000           # libsvm 迭代上限，防止极端参数下单次训练过久；-1 表示不设上限
+    # libsvm 迭代上限；-1 表示不设上限。C 接近 e^10、g 很小时 SMO 难以收敛，100 万次迭代单次训练约 0.7 s，
+    # 粒子停在该边界附近时一个任务会拖到数小时；10 万次约 0.13 s。正常区域的训练只需几千到几万次迭代，不受影响
+    max_iter: int = 100_000
     baselines: bool = True
     grid_step: float = 0.5              # 网格搜索 SVR 在 ln C、ln g 上的步长
     algorithms: tuple[str, ...] = ZH_SVR_ALGORITHMS
@@ -126,6 +135,15 @@ def ZHQ_read_superconductivity(path=ZH_SUPERCONDUCTIVITY_FILE):
         return pd.read_csv(handle)
 
 
+@lru_cache(maxsize=1)
+def ZHQ_read_residential_building(path=ZH_RESIDENTIAL_FILE):
+    """读取转换后的 Residential Building 表：372 行，4 个工程日期列 + 103 个输入 + 2 个输出（V-9 售价、V-10 建造成本）。"""
+    import pandas as pd
+    if not Path(path).is_file():
+        raise ValueError(f"找不到 {Path(path).name}，请先运行 prepare_residential_building.py 由原始压缩包生成")
+    return pd.read_csv(path)
+
+
 def ZHQ_load_dataset(config: ZHQ_SVRConfig) -> ZHQ_Dataset:
     title = ZH_DATASET_TITLES.get(config.dataset)
     if config.dataset == "auto_mpg":
@@ -162,6 +180,21 @@ def ZHQ_load_dataset(config: ZHQ_SVRConfig) -> ZHQ_Dataset:
         # 临界温度最小只有 0.0002 K，相对误差会被个别样本放大到失去意义，因此不报告 MRE
         return ZHQ_Dataset("superconductivity", title, features, target, names, "critical_temp",
                            {}, False, rows)
+    if config.dataset == "residential_building":
+        if config.target not in (None, "V-9"):
+            raise ValueError("Residential Building 的目标固定为 V-9（实际售价），不能指定 --target")
+        frame = ZHQ_read_residential_building()
+        # 输入为 UCI 页面所说的 103 个变量：V-1～V-8 与 19 个经济变量 × 5 个时间滞后。
+        # 4 个工程日期列不在 UCI 的 105 个变量之内；另一个输出 V-10（建造成本）也不能当输入
+        names = tuple(column for column in frame.columns
+                      if column not in ZH_RESIDENTIAL_DATES + ZH_RESIDENTIAL_OUTPUTS)
+        if len(frame) != 372 or len(names) != 103:
+            raise ValueError(f"Residential Building 应为 372 行、103 个输入，实际为 {len(frame)} 行、{len(names)} 个输入")
+        features = frame[list(names)].to_numpy(dtype=float)
+        target = frame["V-9"].to_numpy(dtype=float)
+        if not (np.isfinite(features).all() and np.isfinite(target).all()) or target.min() <= 0:
+            raise ValueError("Residential Building 数据中出现非有限值或非正的售价")
+        return ZHQ_Dataset("residential_building", title, features, target, names, "V-9", {}, True, None)
     raise ValueError(f"未知数据集 {config.dataset!r}，可选 {tuple(ZH_DATASET_FILES)}")
 
 
@@ -332,7 +365,9 @@ class ZHQ_SVRProblem:
         train_prediction = p.inverse_target(model.predict(train_features))
         test_prediction = p.inverse_target(model.predict(p.features(self.test_x)[:, mask]))
         relative = self.dataset.relative_metrics
-        return dict(n_support=int(len(model.support_)),
+        n_iter = int(np.ravel(model.n_iter_)[0])
+        return dict(n_support=int(len(model.support_)), n_iter=n_iter,
+                    converged=bool(self.config.max_iter < 0 or n_iter < self.config.max_iter),
                     train=ZHQ_regression_metrics(self.train_y, train_prediction, relative),
                     test=ZHQ_regression_metrics(self.test_y, test_prediction, relative),
                     test_prediction=test_prediction)

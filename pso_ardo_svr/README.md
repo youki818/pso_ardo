@@ -22,7 +22,7 @@
 
 | 项目 | 设置 |
 | --- | --- |
-| 数据集 | **Auto MPG**（UCI 编号 9，398 个样本，7 个特征，目标 mpg），与论文对应；**Superconductivity**（UCI 编号 464，原始 21263 条、81 个材料描述符，目标临界温度）。Superconductivity 按 `--sample-seed` 从 UCI 原始压缩包的 `train.csv` 中无放回随机抽取 `--n-samples` 条（默认 1000），因为 SVR 的训练开销随样本数近似平方增长 |
+| 数据集 | **Auto MPG**（UCI 编号 9，398 个样本，7 个特征，目标 mpg），与论文对应；**Superconductivity**（UCI 编号 464，原始 21263 条、81 个材料描述符，目标临界温度）。Superconductivity 按 `--sample-seed` 从 UCI 原始压缩包的 `train.csv` 中无放回随机抽取 `--n-samples` 条（默认 1000），因为 SVR 的训练开销随样本数近似平方增长；**Residential Building**（UCI 编号 437，372 个样本，103 个输入，目标 V-9 实际售价，见下文） |
 | 划分 | Auto MPG 沿用 MATLAB 程序 `nnn.xlsx` 的划分（前 319 个训练，79 个测试）；Superconductivity 按 `--split-seed` 随机 80/20 划分 |
 | 预处理 | 缺失值用中位数填补，特征和目标用 min-max 映射到 [-1, 1]（同 mapminmax）；都只在训练部分（交叉验证时为每一折的训练部分）上拟合 |
 | 搜索空间 | 每个特征一个选择位 m ∈ [0, 1]（> 0.5 为选中，全不选时保留 m 最大的特征），加上 ln C、ln g ∈ [-10, 10]（同论文）、ln ε ∈ [-9, 0]。Auto MPG 共 10 维，Superconductivity 共 84 维 |
@@ -68,6 +68,8 @@
 | `data/auto-mpg.data` | UCI Auto MPG 原始数据 |
 | `data/matlab_split_order.csv` | 由 `nnn.xlsx` 导出的样本打乱顺序，用来复现 MATLAB 程序的划分 |
 | `data/superconductivity.zip` | UCI Superconductivity 原始压缩包（内含 `train.csv`、`unique_m.csv`），从 `pso_adro_2/data/superconductivity_raw` 复制 |
+| `data/residential_building.zip` | UCI Residential Building 原始压缩包，2026-11-23 从 UCI 官网下载（sha256 `f1821f93…2054fb9`），内含 `Residential-Building-Data-Set.xlsx` |
+| `data/residential_building.csv` `prepare_residential_building.py` | 由该脚本把 xlsx 的 Data 表原样转成 CSV（372 行 × 109 列）；实验只读 CSV，运行环境不必安装 openpyxl |
 
 ## 运行
 
@@ -92,6 +94,18 @@ python "D:\VsCodeProjects1\codex_oco\pso_ardo\pso_ardo_svr\run_svr.py" --dataset
 ```powershell
 python "D:\VsCodeProjects1\codex_oco\pso_ardo\pso_ardo_svr\run_svr.py" --dataset auto_mpg --jobs 16
 ```
+
+正式实验，Residential Building：按 `--split-seed` 随机 80/20 划分（297 个训练、75 个测试）。目标 V-9 为正数（最小 50、中位数 1000），所以报告会给出论文表 4-5 格式的平均相对误差与均方差。
+
+```powershell
+python "D:\VsCodeProjects1\codex_oco\pso_ardo\pso_ardo_svr\run_svr.py" --dataset residential_building --jobs 12
+```
+
+Residential Building 的列结构（已对照原始文件核实）：
+
+- 共 109 列。前 4 列是开工、竣工的年份和季度（波斯历），不在 UCI 所说的 105 个变量之内，不作为输入。
+- 其后是 V-1～V-8 共 8 个项目物理与财务变量，以及 V-11～V-29 共 19 个经济变量与指数、各取 5 个时间滞后（95 个），合计 **103 个输入**。V-1 是用邮编表示的项目所在地，按原表数值使用。
+- 最后两列是输出：V-9 实际售价（目标）、V-10 实际建造成本（另一个输出，不作为输入）。
 
 正式实验，Superconductivity：每次评价要在约 640 个样本、最多 81 个特征上训练 5 个 SVR，比 Auto MPG 慢得多。太慢时可以加 `--iterations 50`。
 
@@ -133,6 +147,13 @@ python "D:\VsCodeProjects1\codex_oco\pso_ardo\pso_ardo_svr\run_svr.py" --report-
 | `curves/` `predictions/` | 逐代收敛数据；各方法在测试集上的预测值 |
 | `figures/` | 01 收敛曲线、02 最终结果分布（箱线图 + 每次重复的点）、03 测试集预测值–真实值散点图、04 特征入选比例（不做特征选择时为网格适应度曲面），png + svg |
 | `partial/` `metadata.json` | 逐任务原始记录、配置、抽样行号、数据划分索引、代码哈希、软件版本 |
+
+## 个别任务明显更慢时
+
+C 接近搜索上界 e^10、g 又很小时，libsvm 的 SMO 很难收敛。粒子停在这一边界附近时，单次训练会一直跑到迭代上限。因此默认 `--max-iter 100000`：在本机的 Auto MPG 上，这类训练每次约 0.13 s；若用 100 万次上限则约 0.7 s，一个任务可能拖到数小时。正常区域的训练只需几千到几万次迭代，不受这个上限影响。
+
+- 报告的“说明”一节会统计：寻优中有多少次训练触顶，以及最终模型是否收敛（`runs.csv` 的 `final_converged`、`final_n_iter` 列）。
+- 运行时如果 2 分钟没有新任务完成，终端会打印仍在运行的任务名。这是在提示进度，不是卡死。
 
 ## 工作进程崩溃时
 
